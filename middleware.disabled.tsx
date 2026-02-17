@@ -15,84 +15,113 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { MapPin, Calendar, IndianRupee, Users, Search, Plus, Eye, Trash2, Clock, CheckCircle, AlertCircle } from "lucide-react"
+import {
+  MapPin,
+  Calendar,
+  IndianRupee,
+  Users,
+  Search,
+  Plus,
+  Eye,
+  Trash2,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react"
 import Link from "next/link"
+import { useTrip } from "@/lib/trip-context"
+import type { TripDetails } from "@/lib/trip-context"
 import { format } from "date-fns"
 import { motion } from "framer-motion"
-import { supabase } from "@/lib/supabase/client" // <-- your Supabase client
-import type { TripDetails } from "@/lib/trip-context"
 
 export default function TripsPage() {
-  const [trips, setTrips] = useState<TripDetails[]>([])
+  const { trips, deleteTrip, updateTrip } = useTrip()
   const [filteredTrips, setFilteredTrips] = useState<TripDetails[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Fetch trips from database
-  useEffect(() => {
-    const fetchTrips = async () => {
-      const { data, error } = await supabase
-        .from("trips")
-        .select("*")
-        .order("startDate", { ascending: true })
+  // ✅ Filter trips safely
+ useEffect(() => {
+  const filtered = trips.filter((trip) => {
+    const tripName = trip.destination?.name ?? ""
+    const tripCountry = trip.destination?.country ?? ""
 
-      if (error) return console.error("Error fetching trips:", error)
-      setTrips(data ?? [])
-    }
+    const matchesSearch =
+      tripName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      tripCountry.toLowerCase().includes(searchTerm.toLowerCase())
 
-    fetchTrips()
-  }, [])
+    const matchesStatus = statusFilter === "all" || trip.status === statusFilter
 
-  // Filter trips based on search and status
-  useEffect(() => {
-    const filtered = trips.filter((trip) => {
-      const destName = trip.destination?.name ?? ""
-      const destCountry = trip.destination?.country ?? ""
+    return matchesSearch && matchesStatus
+  })
 
-      const matchesSearch =
-        destName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        destCountry.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = statusFilter === "all" || trip.status === statusFilter
-      return matchesSearch && matchesStatus
-    })
-    setFilteredTrips(filtered)
-  }, [trips, searchTerm, statusFilter])
+  setFilteredTrips(filtered)
+}, [trips, searchTerm, statusFilter])
 
   const getStatusConfig = (status: TripDetails["status"]) => {
     switch (status) {
-      case "planning": return { color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400", icon: Clock, label: "Planning" }
-      case "confirmed": return { color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400", icon: CheckCircle, label: "Confirmed" }
-      case "ongoing": return { color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400", icon: AlertCircle, label: "Ongoing" }
-      case "completed": return { color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400", icon: CheckCircle, label: "Completed" }
-      case "cancelled": return { color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400", icon: AlertCircle, label: "Cancelled" }
-      default: return { color: "bg-gray-100 text-gray-800", icon: Clock, label: "Unknown" }
+      case "planning":
+        return {
+          color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+          icon: Clock,
+          label: "Planning",
+          description: "Trip is being planned",
+        }
+      case "confirmed":
+        return {
+          color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+          icon: CheckCircle,
+          label: "Confirmed",
+          description: "Trip is confirmed and ready",
+        }
+      case "ongoing":
+        return {
+          color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+          icon: AlertCircle,
+          label: "Ongoing",
+          description: "You are currently on this trip",
+        }
+      case "completed":
+        return {
+          color: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400",
+          icon: CheckCircle,
+          label: "Completed",
+          description: "Trip has been completed",
+        }
+      case "cancelled":
+        return {
+          color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+          icon: AlertCircle,
+          label: "Cancelled",
+          description: "Trip has been cancelled",
+        }
+      default:
+        return {
+          color: "bg-gray-100 text-gray-800",
+          icon: Clock,
+          label: "Unknown",
+          description: "Unknown status",
+        }
     }
   }
 
-  // Update trip status in DB
-  const handleStatusChange = async (tripId: string, newStatus: TripDetails["status"]) => {
-    const { error } = await supabase.from("trips").update({ status: newStatus }).eq("id", tripId)
-    if (error) return console.error("Error updating status:", error)
-    // Update local state
-    setTrips((prev) =>
-      prev.map((t) => (t.id === tripId ? { ...t, status: newStatus } : t))
-    )
-  }
-
-  // Delete trip from DB
   const handleDeleteTrip = async () => {
     if (!deleteId) return
     setIsDeleting(true)
-    const { error } = await supabase.from("trips").delete().eq("id", deleteId)
-    if (error) {
-      console.error("Error deleting trip:", error)
-    } else {
-      setTrips((prev) => prev.filter((t) => t.id !== deleteId))
+    try {
+      await deleteTrip(deleteId)
       setDeleteId(null)
+    } catch (error) {
+      console.error("Error deleting trip:", error)
+    } finally {
+      setIsDeleting(false)
     }
-    setIsDeleting(false)
+  }
+
+  const handleStatusChange = async (tripId: string, newStatus: TripDetails["status"]) => {
+    await updateTrip(tripId, { status: newStatus })
   }
 
   const stats = {
@@ -100,17 +129,19 @@ export default function TripsPage() {
     completed: trips.filter((t) => t.status === "completed").length,
     planning: trips.filter((t) => t.status === "planning").length,
     confirmed: trips.filter((t) => t.status === "confirmed").length,
-    totalSpent: trips.filter((t) => t.status === "completed").reduce((sum, t) => sum + (t.totalCost ?? 0), 0),
+    totalSpent: trips.filter((t) => t.status === "completed").reduce((sum, trip) => sum + trip.totalCost, 0),
   }
 
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header and stats */}
+        {/* Header & Stats */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">My Trips</h1>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                My Trips
+              </h1>
               <p className="text-muted-foreground">Manage and track all your travel adventures</p>
             </div>
             <Link href="/dashboard/plan-trip">
@@ -120,16 +151,32 @@ export default function TripsPage() {
               </Button>
             </Link>
           </div>
+
+          {/* Statistics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <CardStat label="Total Trips" value={stats.total} icon="🌍" />
-            <CardStat label="Planning" value={stats.planning} icon="📋" colorClass="text-blue-600" />
-            <CardStat label="Confirmed" value={stats.confirmed} icon="✅" colorClass="text-green-600" />
-            <CardStat label="Completed" value={stats.completed} icon="🎉" />
-            <CardStat label="Total Spent" value={`₹${(stats.totalSpent ?? 0).toLocaleString("en-IN")}`} icon="💰" />
+            {[
+              { label: "Total Trips", value: stats.total, icon: "🌍" },
+              { label: "Planning", value: stats.planning, icon: "📋", color: "text-blue-600" },
+              { label: "Confirmed", value: stats.confirmed, icon: "✅", color: "text-green-600" },
+              { label: "Completed", value: stats.completed, icon: "🎉" },
+              { label: "Total Spent", value: `₹${stats.totalSpent.toLocaleString("en-IN")}`, icon: "💰" },
+            ].map((stat, idx) => (
+              <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+                <Card className="border-0 shadow-md">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">{stat.label}</p>
+                      <p className={`text-3xl font-bold ${stat.color || ""}`}>{stat.value}</p>
+                    </div>
+                    <div className="text-3xl">{stat.icon}</div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
           </div>
         </motion.div>
 
-        {/* Search and filter */}
+        {/* Search & Filter */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex flex-col sm:flex-row gap-4 mb-8">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -155,22 +202,22 @@ export default function TripsPage() {
           </Select>
         </motion.div>
 
-        {/* Trips grid */}
+        {/* Trips Grid */}
         {filteredTrips.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTrips.map((trip, index) => {
               const statusConfig = getStatusConfig(trip.status)
               const StatusIcon = statusConfig.icon
-              const dest = trip.destination ?? {}
-              const hotel = trip.hotel ?? {}
-              const interests = trip.interests ?? []
 
               return (
                 <motion.div key={trip.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
                   <Card className="overflow-hidden hover:shadow-xl transition-all duration-300 border-0 h-full flex flex-col">
-                    {/* Image */}
                     <div className="relative aspect-video bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 overflow-hidden">
-                      <img src={dest.imageUrl ?? "/placeholder.svg"} alt={dest.name ?? "Destination"} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      <img
+                        src={trip.destination?.imageUrl || "/placeholder.svg"}
+                        alt={trip.destination?.name || "Destination"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
                       <div className="absolute inset-0 bg-black/10" />
                       <Badge className={`absolute top-3 right-3 ${statusConfig.color}`}>
                         <StatusIcon className="h-3 w-3 mr-1" />
@@ -178,66 +225,79 @@ export default function TripsPage() {
                       </Badge>
                     </div>
 
-                    {/* Header */}
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <CardTitle className="text-xl">{dest.name ?? "Unknown"}</CardTitle>
+                          <CardTitle className="text-xl">{trip.destination?.name || "Unknown Destination"}</CardTitle>
                           <CardDescription className="flex items-center gap-1 mt-1">
                             <MapPin className="h-3 w-3" />
-                            {dest.country ?? "Unknown"}
+                            {trip.destination?.country || "Unknown Country"}
                           </CardDescription>
                         </div>
                       </div>
                     </CardHeader>
 
-                    {/* Content */}
                     <CardContent className="space-y-4 flex-1">
-                      {dest.description && <p className="text-sm text-muted-foreground line-clamp-2">{dest.description}</p>}
+                      {trip.destination?.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">{trip.destination.description}</p>
+                      )}
 
+                      {/* Trip Info */}
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <Calendar className="h-4 w-4" />
-                          <span>{trip.startDate ? format(trip.startDate, "MMM d") : "-"}</span>
+                          <span>{format(trip.startDate, "MMM d")}</span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <IndianRupee className="h-4 w-4" />
-                          <span>₹{(trip.totalCost ?? 0).toLocaleString("en-IN")}</span>
+                          <span>₹{trip.totalCost.toLocaleString("en-IN")}</span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <Users className="h-4 w-4" />
-                          <span>{trip.numberOfPeople ?? 0} person{trip.numberOfPeople !== 1 ? "s" : ""}</span>
+                          <span>
+                            {trip.numberOfPeople} person{trip.numberOfPeople !== 1 ? "s" : ""}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
                           <Calendar className="h-4 w-4" />
-                          <span>{trip.numberOfNights ?? 0} nights</span>
+                          <span>{trip.numberOfNights} nights</span>
                         </div>
                       </div>
 
-                      {interests.length > 0 && (
+                      {/* Interests */}
+                      {trip.interests.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold mb-2 text-muted-foreground">INTERESTS</p>
                           <div className="flex flex-wrap gap-1">
-                            {interests.slice(0, 2).map((interest) => (
-                              <Badge key={interest} variant="secondary" className="text-xs">{interest}</Badge>
+                            {trip.interests.slice(0, 2).map((interest) => (
+                              <Badge key={interest} variant="secondary" className="text-xs">
+                                {interest}
+                              </Badge>
                             ))}
-                            {interests.length > 2 && <Badge variant="secondary" className="text-xs">+{interests.length - 2}</Badge>}
+                            {trip.interests.length > 2 && (
+                              <Badge variant="secondary" className="text-xs">
+                                +{trip.interests.length - 2}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       )}
 
-                      {/* Hotel */}
+                      {/* Accommodation */}
                       <div className="pt-2 border-t">
                         <p className="text-xs font-semibold mb-2 text-muted-foreground">ACCOMMODATION</p>
-                        <p className="text-sm font-medium">{hotel.name ?? "N/A"}</p>
-                        <p className="text-xs text-muted-foreground">₹{(hotel.pricePerNight ?? 0).toLocaleString("en-IN")} per night</p>
+                        <p className="text-sm font-medium">{trip.hotel.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          ₹{trip.hotel.pricePerNight.toLocaleString("en-IN")} per night
+                        </p>
                       </div>
                     </CardContent>
 
-                    {/* Actions */}
                     <div className="border-t p-4 space-y-3">
                       <Select value={trip.status} onValueChange={(value) => handleStatusChange(trip.id, value as TripDetails["status"])}>
-                        <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="planning">Planning</SelectItem>
                           <SelectItem value="confirmed">Confirmed</SelectItem>
@@ -250,10 +310,16 @@ export default function TripsPage() {
                       <div className="flex gap-2">
                         <Link href={`/dashboard/trips/${trip.id}`} className="flex-1">
                           <Button size="sm" variant="outline" className="w-full bg-transparent">
-                            <Eye className="h-3 w-3 mr-1" /> View
+                            <Eye className="h-3 w-3 mr-1" />
+                            View
                           </Button>
                         </Link>
-                        <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 bg-transparent" onClick={() => setDeleteId(trip.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 bg-transparent"
+                          onClick={() => setDeleteId(trip.id)}
+                        >
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
@@ -267,47 +333,38 @@ export default function TripsPage() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center py-16">
             <div className="text-6xl mb-4">🧳</div>
             <h3 className="text-lg font-semibold mb-2">No trips found</h3>
-            <p className="text-muted-foreground mb-6">{searchTerm || statusFilter !== "all" ? "Try adjusting your search or filter criteria" : "Start planning your first adventure!"}</p>
+            <p className="text-muted-foreground mb-6">
+              {searchTerm || statusFilter !== "all"
+                ? "Try adjusting your search or filter criteria"
+                : "Start planning your first adventure!"}
+            </p>
             <Link href="/dashboard/plan-trip">
               <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                <Plus className="h-4 w-4 mr-2" /> Plan Your First Trip
+                <Plus className="h-4 w-4 mr-2" />
+                Plan Your First Trip
               </Button>
             </Link>
           </motion.div>
         )}
-
       </div>
 
-      {/* Delete Dialog */}
+      {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Trip</AlertDialogTitle>
-            <AlertDialogDescription>Are you sure you want to delete this trip? This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Are you sure you want to delete this trip? This action cannot be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-3 justify-end">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTrip} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">{isDeleting ? "Deleting..." : "Delete"}</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteTrip} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   )
 }
-
-// Stats card
-const CardStat = ({ label, value, icon, colorClass }: { label: string, value: number | string, icon: string, colorClass?: string }) => (
-  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-    <Card className="border-0 shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className={`text-3xl font-bold ${colorClass ?? ""}`}>{value}</p>
-          </div>
-          <div className="text-3xl">{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
-  </motion.div>
-)

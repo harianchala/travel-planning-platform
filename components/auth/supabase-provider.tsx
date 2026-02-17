@@ -1,8 +1,8 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { createClient } from "@/lib/supabase/client"
-import type { User } from "@supabase/supabase-js"
+import { createContext, useContext, useEffect, useState } from "react"
+import { supabase } from "@/lib/supabase/client"
+import type { User, Session } from "@supabase/supabase-js"
 
 interface AuthContextType {
   user: User | null
@@ -17,88 +17,76 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
 
   useEffect(() => {
-    let isMounted = true
-
     const initializeAuth = async () => {
-      try {
-        // Check if user is already logged in
-        const {
-          data: { user: currentUser },
-        } = await supabase.auth.getUser()
-        
-        if (isMounted) {
-          setUser(currentUser)
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error("Auth error:", error)
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
-      }
+      const { data } = await supabase.auth.getSession()
+
+      console.log("Initial session:", data.session)
+
+      setUser(data.session?.user ?? null)
+      setLoading(false)
     }
 
     initializeAuth()
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (isMounted) {
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session: Session | null) => {
+        console.log("Auth state changed:", session)
         setUser(session?.user ?? null)
       }
-    })
+    )
 
     return () => {
-      isMounted = false
-      subscription?.unsubscribe()
+      authListener.subscription.unsubscribe()
     }
   }, [])
 
   const signIn = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) return { error: error.message }
-      return {}
-    } catch (error) {
-      return { error: "An error occurred during sign in" }
+    console.log("Attempting login...")
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    console.log("SignIn response:", data)
+
+    if (error) {
+      console.log("Login error:", error.message)
+      return { error: error.message }
     }
+
+    // 🔥 CRITICAL: Manually set user immediately
+    if (data?.user) {
+      console.log("Setting user manually:", data.user)
+      setUser(data.user)
+    }
+
+    return {}
   }
 
   const signUp = async (email: string, password: string, name: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name,
-          },
-        },
-      })
-      if (error) return { error: error.message }
-      return {}
-    } catch (error) {
-      return { error: "An error occurred during sign up" }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name },
+      },
+    })
+
+    if (error) return { error: error.message }
+
+    if (data?.user) {
+      setUser(data.user)
     }
+
+    return {}
   }
 
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut()
-      setUser(null)
-    } catch (error) {
-      console.error("Sign out error:", error)
-    }
+    await supabase.auth.signOut()
+    setUser(null)
   }
 
   return (

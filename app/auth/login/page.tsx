@@ -17,31 +17,41 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+
   const { signIn, user, loading: authLoading } = useAuth()
   const router = useRouter()
 
-  // Redirect to dashboard if already logged in
+  console.log("USER:", user)
+
   useEffect(() => {
     if (!authLoading && user) {
+      console.log("Redirecting to dashboard...")
       router.replace("/dashboard")
     }
   }, [user, authLoading, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    console.log("Submitting login...")
     setError("")
     setLoading(true)
 
     try {
       const result = await signIn(email, password)
-      if (result.error) {
+
+      console.log("SIGNIN RESULT:", result)
+
+      if (result?.error) {
         setError(result.error)
-      } else {
-        router.push("/dashboard")
+        setLoading(false)
+        return
       }
+
+      console.log("Login success — waiting for auth update...")
     } catch (err) {
-      setError("An unexpected error occurred")
-    } finally {
+      console.error("Unexpected error:", err)
+      setError("Something went wrong")
       setLoading(false)
     }
   }
@@ -64,13 +74,17 @@ export default function LoginPage() {
             </div>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-600 mt-2">Sign in to your Traveloop account</p>
+          <p className="text-gray-600 mt-2">
+            Sign in to your Traveloop account
+          </p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
-            <CardDescription>Enter your email and password to access your account</CardDescription>
+            <CardDescription>
+              Enter your email and password to access your account
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -79,19 +93,18 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
                 />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -121,7 +134,10 @@ export default function LoginPage() {
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
                 Don't have an account?{" "}
-                <Link href="/auth/register" className="text-blue-600 hover:underline font-medium">
+                <Link
+                  href="/auth/register"
+                  className="text-blue-600 hover:underline font-medium"
+                >
                   Sign up here
                 </Link>
               </p>
